@@ -81,17 +81,9 @@ static bool fetchFromProxy(char* buf, int maxLen) {
   esp_task_wdt_reset();
   int pos = 0;
   if (code == 200) {
-    WiFiClient* stream = http.getStreamPtr();
-    unsigned long deadline = millis() + 20000;
-    while (millis() < deadline && (http.connected() || stream->available())
-           && pos < maxLen - 1) {
-      int avail = stream->available();
-      if (avail > 0) {
-        int n = stream->readBytes((uint8_t*)(buf + pos), min(avail, maxLen - pos - 1));
-        if (n > 0) { pos += n; deadline = millis() + 20000; }
-      } else { delay(5); }
-      esp_task_wdt_reset();
-    }
+    String body = http.getString();
+    pos = min((int)body.length(), maxLen - 1);
+    memcpy(buf, body.c_str(), pos);
     buf[pos] = 0;
   }
   http.end();
@@ -543,23 +535,10 @@ bool fetchWeather() {
       http.end();
       continue;
     }
-    char body[768] = {0};
-    int bpos = 0;
-    WiFiClient* stream = http.getStreamPtr();
-    unsigned long dl = millis() + 10000;
-    while (millis() < dl && (http.connected() || stream->available())
-           && bpos < (int)sizeof(body) - 1) {
-      int avail = stream->available();
-      if (avail > 0) {
-        int n = stream->readBytes((uint8_t*)(body + bpos),
-                                  min(avail, (int)sizeof(body) - bpos - 1));
-        if (n > 0) { bpos += n; dl = millis() + 10000; }
-      } else { delay(5); }
-      esp_task_wdt_reset();
-    }
+    String body = http.getString();
     http.end();
     esp_task_wdt_reset();
-    if (parseWeatherBody(body)) return true;
+    if (parseWeatherBody(body.c_str())) return true;
     Serial.printf("[WX] JSON parse error (attempt %d/2)\n", attempt);
   }
   Serial.println("[WX] All attempts failed");
