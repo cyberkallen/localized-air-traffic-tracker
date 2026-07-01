@@ -8,9 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		2992368DB0B828CFE1AC2FEF /* ProxyFlightResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29B2150CF2DD185194D7782 /* ProxyFlightResponse.swift */; };
+		3B1D9F5AC2E54E71BFB7E7C1 /* FlightOrdererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D1E3B8F6F44D8E8E5E9D31 /* FlightOrdererTests.swift */; };
 		4A187D1926D74659D8D88F40 /* ScreensaverStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8422DC284A3AB28330E11AC /* ScreensaverStateTests.swift */; };
+		9F6B7D4B3C14451DB8F8B73A /* ProxyFlightResponseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64D38A23B641C2890A5E3F /* ProxyFlightResponseTests.swift */; };
 		6745A98FDC89BD3A55A65C76 /* ScreensaverState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F87E7C302A45921F12C785A /* ScreensaverState.swift */; };
 		81900DC01833C35B47BEB73C /* FlightPhase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D0F10B3BA2CFE96C82E782 /* FlightPhase.swift */; };
+		9A8F62A1A4C24D5EA6D9C0B7 /* FlightOrderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6D8D8D70D44B0EB5A4C01F /* FlightOrderer.swift */; };
 		8B919A4DEAF407122B7BA5D8 /* OverheadTrackerScreensaverCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 25F0E10E5CAC3E8EBB3A1EC0 /* OverheadTrackerScreensaverCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9DF8560D0232B460FFD17523 /* FlightPhaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1EA55D7AA294ADBE1C1A1B /* FlightPhaseTests.swift */; };
 		A1CCD47AB138A68A742D8C65 /* OverheadTrackerScreensaverCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25F0E10E5CAC3E8EBB3A1EC0 /* OverheadTrackerScreensaverCore.framework */; };
@@ -46,6 +49,9 @@
 		3F87E7C302A45921F12C785A /* ScreensaverState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreensaverState.swift; sourceTree = "<group>"; };
 		456547AD3E857BA67D0D7BCD /* OverheadTrackerScreensaverCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OverheadTrackerScreensaverCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		79EB7380DD6D271AEBA1D6E3 /* Flight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Flight.swift; sourceTree = "<group>"; };
+		75D1E3B8F6F44D8E8E5E9D31 /* FlightOrdererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightOrdererTests.swift; sourceTree = "<group>"; };
+		5D6D8D8D70D44B0EB5A4C01F /* FlightOrderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightOrderer.swift; sourceTree = "<group>"; };
+		0D64D38A23B641C2890A5E3F /* ProxyFlightResponseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyFlightResponseTests.swift; sourceTree = "<group>"; };
 		A8422DC284A3AB28330E11AC /* ScreensaverStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreensaverStateTests.swift; sourceTree = "<group>"; };
 		C29B2150CF2DD185194D7782 /* ProxyFlightResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyFlightResponse.swift; sourceTree = "<group>"; };
 		F3D0F10B3BA2CFE96C82E782 /* FlightPhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightPhase.swift; sourceTree = "<group>"; };
@@ -68,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				79EB7380DD6D271AEBA1D6E3 /* Flight.swift */,
+				5D6D8D8D70D44B0EB5A4C01F /* FlightOrderer.swift */,
 				F3D0F10B3BA2CFE96C82E782 /* FlightPhase.swift */,
 				C29B2150CF2DD185194D7782 /* ProxyFlightResponse.swift */,
 				3F87E7C302A45921F12C785A /* ScreensaverState.swift */,
@@ -96,6 +103,8 @@
 		B28DF0B620BA6452028BF3A1 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				75D1E3B8F6F44D8E8E5E9D31 /* FlightOrdererTests.swift */,
+				0D64D38A23B641C2890A5E3F /* ProxyFlightResponseTests.swift */,
 				FA1EA55D7AA294ADBE1C1A1B /* FlightPhaseTests.swift */,
 				A8422DC284A3AB28330E11AC /* ScreensaverStateTests.swift */,
 			);
@@ -180,6 +189,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				9DF8560D0232B460FFD17523 /* FlightPhaseTests.swift in Sources */,
+				3B1D9F5AC2E54E71BFB7E7C1 /* FlightOrdererTests.swift in Sources */,
+				9F6B7D4B3C14451DB8F8B73A /* ProxyFlightResponseTests.swift in Sources */,
 				4A187D1926D74659D8D88F40 /* ScreensaverStateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -189,6 +200,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FF6D91064BACF5CFCB3F0960 /* Flight.swift in Sources */,
+				9A8F62A1A4C24D5EA6D9C0B7 /* FlightOrderer.swift in Sources */,
 				81900DC01833C35B47BEB73C /* FlightPhase.swift in Sources */,
 				2992368DB0B828CFE1AC2FEF /* ProxyFlightResponse.swift in Sources */,
 				6745A98FDC89BD3A55A65C76 /* ScreensaverState.swift in Sources */,
