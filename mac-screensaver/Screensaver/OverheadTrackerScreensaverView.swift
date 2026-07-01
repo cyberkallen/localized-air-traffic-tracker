@@ -116,6 +116,7 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
     private func requestFlights() {
         requestSequence += 1
         let requestID = requestSequence
+        let isRefreshingLiveContent = isShowingLiveContent
 
         activeDataTask?.cancel()
         loadingWatchdog?.cancel()
@@ -132,7 +133,9 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
             screensaverLogger.info("fetching flights url=\(url.absoluteString, privacy: .public)")
         } catch {
             screensaverLogger.error("failed to build flights url")
-            viewModel.state = .offline(message: "Unable to load aircraft data")
+            if !isRefreshingLiveContent {
+                viewModel.state = .offline(message: "Unable to load aircraft data")
+            }
             return
         }
 
@@ -149,13 +152,21 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
 
                 if let error {
                     screensaverLogger.error("request failed error=\(error.localizedDescription, privacy: .public)")
-                    self.viewModel.state = .offline(message: error.localizedDescription)
+                    if !isRefreshingLiveContent {
+                        self.viewModel.state = .offline(message: error.localizedDescription)
+                    } else {
+                        screensaverLogger.info("keeping existing live card after refresh failure")
+                    }
                     return
                 }
 
                 guard let data else {
                     screensaverLogger.error("request completed without data")
-                    self.viewModel.state = .offline(message: "Unable to load aircraft data")
+                    if !isRefreshingLiveContent {
+                        self.viewModel.state = .offline(message: "Unable to load aircraft data")
+                    } else {
+                        screensaverLogger.info("keeping existing live card after empty refresh response")
+                    }
                     return
                 }
 
@@ -168,7 +179,11 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
                     self.updateState(with: flights)
                 } catch {
                     screensaverLogger.error("decode failed error=\(error.localizedDescription, privacy: .public)")
-                    self.viewModel.state = .offline(message: "Unable to load aircraft data")
+                    if !isRefreshingLiveContent {
+                        self.viewModel.state = .offline(message: "Unable to load aircraft data")
+                    } else {
+                        screensaverLogger.info("keeping existing live card after decode failure")
+                    }
                 }
             }
         }
@@ -180,10 +195,21 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
             guard self.requestSequence == requestID else { return }
             guard self.viewModel.state == .loading else { return }
             screensaverLogger.info("loading watchdog expired")
-            self.viewModel.state = .noFlights
+            if !isRefreshingLiveContent {
+                self.viewModel.state = .noFlights
+            } else {
+                screensaverLogger.info("keeping existing live card after refresh watchdog expiry")
+            }
         }
         loadingWatchdog = watchdog
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: watchdog)
+    }
+
+    private var isShowingLiveContent: Bool {
+        if case .live = viewModel.state {
+            return true
+        }
+        return false
     }
 
     private func updateState(with flights: [Flight]) {
