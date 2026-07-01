@@ -15,9 +15,11 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
     private let viewModel: ScreensaverViewModel
     private let hostingView: NSHostingView<OverheadTrackerScreensaverRootView>
     private var refreshTimer: Timer?
+    private var rotationTimer: Timer?
     private var activeDataTask: URLSessionDataTask?
     private var loadingWatchdog: DispatchWorkItem?
     private var requestSequence = 0
+    private var currentFlights: [Flight] = []
     private let previewMode: Bool
 
     public override init?(frame: NSRect, isPreview: Bool) {
@@ -58,6 +60,8 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         screensaverLogger.info("stopAnimation")
         refreshTimer?.invalidate()
         refreshTimer = nil
+        rotationTimer?.invalidate()
+        rotationTimer = nil
         activeDataTask?.cancel()
         activeDataTask = nil
         loadingWatchdog?.cancel()
@@ -99,6 +103,14 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         }
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+
+        let rotationTimer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.advanceCard()
+            }
+        }
+        RunLoop.main.add(rotationTimer, forMode: .common)
+        self.rotationTimer = rotationTimer
     }
 
     private func requestFlights() {
@@ -151,6 +163,7 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
                     let decoded = try JSONDecoder().decode(ProxyFlightResponse.self, from: data)
                     let flights = decoded.flights
                     screensaverLogger.info("request succeeded flights=\(flights.count, privacy: .public)")
+                    self.currentFlights = flights
                     self.rotationController.update(flights: flights)
                     self.updateState(with: flights)
                 } catch {
@@ -187,6 +200,12 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         viewModel.state = .live(flights, index: index)
     }
 
+    private func advanceCard() {
+        guard currentFlights.count > 1 else { return }
+        rotationController.advance()
+        updateState(with: currentFlights)
+    }
+
     private func showPreviewData() {
         let flights = [
             Flight(
@@ -220,6 +239,7 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         ]
 
         rotationController.update(flights: flights)
+        currentFlights = flights
         updateState(with: flights)
     }
 }

@@ -252,11 +252,11 @@ private struct FlightArtworkTileView: View {
                 return
             }
 
-            if let cachedLogo = await FlightImageCache.shared.image(for: logoKey) {
+            if let cachedLogo = FlightImageCache.shared.image(for: logoKey) {
                 logoImage = cachedLogo
             } else if let loadedLogo = await FlightArtworkFetcher.loadAirlineLogo(prefix: prefix) {
                 logoImage = loadedLogo
-                await FlightImageCache.shared.store(loadedLogo, for: logoKey)
+                FlightImageCache.shared.store(loadedLogo, for: logoKey)
             }
 
             guard let photoKey else {
@@ -264,11 +264,11 @@ private struct FlightArtworkTileView: View {
                 return
             }
 
-            if let cachedPhoto = await FlightImageCache.shared.image(for: photoKey) {
+            if let cachedPhoto = FlightImageCache.shared.image(for: photoKey) {
                 photoImage = cachedPhoto
             } else if let loadedPhoto = await FlightArtworkFetcher.loadAircraftPhoto(flight: flight) {
                 photoImage = loadedPhoto
-                await FlightImageCache.shared.store(loadedPhoto, for: photoKey)
+                FlightImageCache.shared.store(loadedPhoto, for: photoKey)
             }
         }
     }
