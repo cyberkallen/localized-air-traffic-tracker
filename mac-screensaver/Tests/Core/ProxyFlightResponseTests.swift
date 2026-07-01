@@ -59,6 +59,7 @@ final class ProxyFlightResponseTests: XCTestCase {
         XCTAssertEqual(decoded.flights.first?.speedKt, 233)
         XCTAssertEqual(decoded.flights.first?.distanceKm, 19.742)
         XCTAssertEqual(decoded.flights.first?.squawk, "1115")
+        XCTAssertEqual(decoded.flights.first?.hex, "7cb0db")
     }
 
     func testUnknownPhaseFallsBackToUnknown() throws {

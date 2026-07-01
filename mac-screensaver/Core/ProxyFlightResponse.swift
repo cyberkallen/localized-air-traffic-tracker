@@ -97,9 +97,10 @@ private struct AircraftPayload: Decodable, Sendable {
         let speedKt = Self.roundedInt(Self.decodeDouble(container, key: .groundSpeed))
         let distanceKm = Self.decodeDouble(container, key: .distanceKm)
         let squawk = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .squawk))
+        let hex = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .hex))
 
         flight = Flight(
-            id: Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .hex)) ?? callsign ?? "UNKNOWN",
+            id: hex ?? callsign ?? "UNKNOWN",
             callsign: callsign ?? Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .hex)) ?? "UNKNOWN",
             airline: operatorName ?? description ?? "Unknown",
             aircraftType: aircraftType ?? "Unknown",
@@ -110,7 +111,8 @@ private struct AircraftPayload: Decodable, Sendable {
             speedKt: speedKt,
             distanceKm: distanceKm,
             phase: .unknown,
-            squawk: squawk
+            squawk: squawk,
+            hex: hex
         )
     }
 

@@ -13,6 +13,7 @@ public struct Flight: Equatable, Sendable {
     public let distanceKm: Double
     public let phase: FlightPhase
     public let squawk: String?
+    public let hex: String?
 
     public init(
         id: String,
@@ -26,7 +27,8 @@ public struct Flight: Equatable, Sendable {
         speedKt: Int,
         distanceKm: Double,
         phase: FlightPhase,
-        squawk: String?
+        squawk: String?,
+        hex: String? = nil
     ) {
         self.id = id
         self.callsign = callsign
@@ -40,6 +42,7 @@ public struct Flight: Equatable, Sendable {
         self.distanceKm = distanceKm
         self.phase = phase
         self.squawk = squawk
+        self.hex = hex
     }
 
     public var isEmergency: Bool {
