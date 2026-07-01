@@ -13,9 +13,26 @@ public final class RotationController: ObservableObject {
     }
 
     public func update(flights: [Flight]) {
-        self.flights = FlightOrderer.closestFirst(flights)
+        let orderedFlights = FlightOrderer.closestFirst(flights)
+        let currentFlightID = currentFlight?.id
+
+        self.flights = orderedFlights
+
+        guard !orderedFlights.isEmpty else {
+            index = 0
+            currentFlight = nil
+            return
+        }
+
+        if let currentFlightID,
+           let retainedIndex = orderedFlights.firstIndex(where: { $0.id == currentFlightID }) {
+            index = retainedIndex
+            currentFlight = orderedFlights[retainedIndex]
+            return
+        }
+
         index = 0
-        currentFlight = self.flights.first
+        currentFlight = orderedFlights.first
     }
 
     public func advance() {
