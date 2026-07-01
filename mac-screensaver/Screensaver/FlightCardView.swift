@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 struct FlightCardView: View {
     let flight: Flight
+    let positionText: String?
 
     private var accentColor: Color {
         if flight.isEmergency {
@@ -97,6 +98,22 @@ struct FlightCardView: View {
             )
             .padding(48)
             .foregroundStyle(.white)
+            .overlay(alignment: .topTrailing) {
+                if let positionText {
+                    Text(positionText)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accentColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.48))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(accentColor.opacity(0.75), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(22)
+                }
+            }
         }
     }
 

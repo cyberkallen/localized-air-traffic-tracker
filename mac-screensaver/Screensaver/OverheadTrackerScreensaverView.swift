@@ -188,22 +188,41 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
 
     private func updateState(with flights: [Flight]) {
         guard let currentFlight = rotationController.currentFlight else {
+            screensaverLogger.info("updateState no current flight total=\(flights.count, privacy: .public)")
             viewModel.state = .noFlights
             return
         }
 
         guard let index = flights.firstIndex(where: { $0.id == currentFlight.id }) else {
+            screensaverLogger.info(
+                "updateState current flight missing id=\(currentFlight.id, privacy: .public) total=\(flights.count, privacy: .public)"
+            )
             viewModel.state = .noFlights
             return
         }
 
+        screensaverLogger.info(
+            "updateState showing card=\(index + 1, privacy: .public)/\(flights.count, privacy: .public) callsign=\(currentFlight.callsign, privacy: .public)"
+        )
         viewModel.state = .live(flights, index: index)
     }
 
     private func advanceCard() {
-        guard currentFlights.count > 1 else { return }
-        rotationController.advance()
-        updateState(with: currentFlights)
+        guard self.currentFlights.count > 1 else {
+            screensaverLogger.info("advanceCard skipped total=\(self.currentFlights.count, privacy: .public)")
+            return
+        }
+
+        let previousFlight = self.rotationController.currentFlight
+        self.rotationController.advance()
+        if let currentFlight = self.rotationController.currentFlight {
+            screensaverLogger.info(
+                "advanceCard previous=\(previousFlight?.callsign ?? "nil", privacy: .public) current=\(currentFlight.callsign, privacy: .public) total=\(self.currentFlights.count, privacy: .public)"
+            )
+        } else {
+            screensaverLogger.info("advanceCard current flight became nil total=\(self.currentFlights.count, privacy: .public)")
+        }
+        self.updateState(with: self.currentFlights)
     }
 
     private func showPreviewData() {
@@ -264,7 +283,10 @@ struct OverheadTrackerScreensaverRootView: View {
                 OfflineStatusView(message: message)
             case .live(let flights, let index):
                 if flights.indices.contains(index) {
-                    FlightCardView(flight: flights[index])
+                    FlightCardView(
+                        flight: flights[index],
+                        positionText: "\(index + 1) / \(flights.count)"
+                    )
                 } else {
                     NoFlightsStatusView()
                 }
