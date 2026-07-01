@@ -273,7 +273,7 @@ struct OverheadTrackerScreensaverRootView: View {
     @ObservedObject var viewModel: ScreensaverViewModel
 
     var body: some View {
-        Group {
+        ZStack(alignment: .topLeading) {
             switch viewModel.state {
             case .loading:
                 LoadingStatusView()
@@ -283,10 +283,29 @@ struct OverheadTrackerScreensaverRootView: View {
                 OfflineStatusView(message: message)
             case .live(let flights, let index):
                 if flights.indices.contains(index) {
-                    FlightCardView(
-                        flight: flights[index],
-                        positionText: "\(index + 1) / \(flights.count)"
-                    )
+                    ZStack(alignment: .topLeading) {
+                        FlightCardView(
+                            flight: flights[index],
+                            positionText: "\(index + 1) / \(flights.count)"
+                        )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("CARD \(index + 1) OF \(flights.count)")
+                                .font(.system(size: 28, weight: .black, design: .rounded))
+                            Text(flights[index].callsign)
+                                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .background(Color.black.opacity(0.78))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(24)
+                    }
                 } else {
                     NoFlightsStatusView()
                 }
