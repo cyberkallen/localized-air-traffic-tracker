@@ -7,10 +7,6 @@ public enum FlightOrderer {
                 return $0.distanceKm < $1.distanceKm
             }
 
-            if $0.callsign != $1.callsign {
-                return $0.callsign < $1.callsign
-            }
-
             return $0.id < $1.id
         }
     }

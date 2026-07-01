@@ -2,7 +2,18 @@ import XCTest
 @testable import OverheadTrackerScreensaverCore
 
 final class FlightPhaseTests: XCTestCase {
-    func testEmergencySquawkMapsToRedOverride() {
+    func testFlightPhaseRawValuesAreStable() {
+        XCTAssertEqual(FlightPhase.takeoff.rawValue, "takeoff")
+        XCTAssertEqual(FlightPhase.climbing.rawValue, "climbing")
+        XCTAssertEqual(FlightPhase.cruising.rawValue, "cruising")
+        XCTAssertEqual(FlightPhase.descending.rawValue, "descending")
+        XCTAssertEqual(FlightPhase.approach.rawValue, "approach")
+        XCTAssertEqual(FlightPhase.landing.rawValue, "landing")
+        XCTAssertEqual(FlightPhase.overhead.rawValue, "overhead")
+        XCTAssertEqual(FlightPhase.unknown.rawValue, "unknown")
+    }
+
+    func testEmergencySquawkSetsEmergencyFlag() {
         let flight = Flight(
             id: "abc123",
             callsign: "QFA1",
