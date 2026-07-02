@@ -82,7 +82,7 @@ public extension Flight {
     }
 
     var mapHeadingDegrees: Double {
-        guard let track else { return 0 }
+        guard let track else { return -45 }
         return track - 45
     }
 

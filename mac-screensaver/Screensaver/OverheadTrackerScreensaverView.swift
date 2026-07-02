@@ -634,7 +634,7 @@ struct MapSnapshotView: View {
                                         .scaledToFit()
                                         .frame(width: isActive ? 22 : 16, height: isActive ? 22 : 16)
                                         .foregroundColor(Color.yellow)
-                                        .rotationEffect(.degrees(viewModel.mapHeadingDegrees(for: flight)))
+                                        .rotationEffect(.degrees(flight.mapHeadingDegrees))
                                         .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
 
                                     Text(flight.callsign)
