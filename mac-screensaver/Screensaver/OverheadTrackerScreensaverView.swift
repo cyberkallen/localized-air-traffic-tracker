@@ -4,8 +4,28 @@ import ScreenSaver
 import OverheadTrackerScreensaverCore
 import os
 import SwiftUI
+import MapKit
 
 private let screensaverLogger = Logger(subsystem: "com.overheadtracker.screensaver", category: "screensaver")
+
+@MainActor
+class TransparentHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool {
+        return false
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.isOpaque = false
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.isOpaque = false
+    }
+}
 
 @objc(OverheadTrackerScreensaverView)
 @MainActor
@@ -13,7 +33,7 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
     private let flightFeedClient = FlightFeedClient()
     private let rotationController = RotationController(flights: [])
     private let viewModel: ScreensaverViewModel
-    private let hostingView: NSHostingView<OverheadTrackerScreensaverRootView>
+    private let hostingView: TransparentHostingView<OverheadTrackerScreensaverRootView>
     private var refreshTimer: Timer?
     private var rotationTimer: Timer?
     private var activeDataTask: URLSessionDataTask?
@@ -26,21 +46,18 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         previewMode = isPreview
         let viewModel = ScreensaverViewModel()
         self.viewModel = viewModel
-        hostingView = NSHostingView(rootView: OverheadTrackerScreensaverRootView(viewModel: viewModel))
+        hostingView = TransparentHostingView(rootView: OverheadTrackerScreensaverRootView(viewModel: viewModel))
         super.init(frame: frame, isPreview: isPreview)
-
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         animationTimeInterval = 1.0 / 30.0
 
+        hostingView.frame = bounds
+        hostingView.autoresizingMask = [.width, .height]
         addSubview(hostingView)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.isOpaque = false
 
         screensaverLogger.info("init preview=\(isPreview, privacy: .public)")
         startRefreshLoopIfNeeded()
@@ -73,6 +90,46 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
         super.viewDidMoveToWindow()
         screensaverLogger.info("viewDidMoveToWindow window=\(self.window != nil, privacy: .public)")
         startRefreshLoopIfNeeded()
+        
+        let scale = window?.backingScaleFactor ?? 2.0
+        triggerMapSnapshot(width: bounds.width, height: bounds.height, scale: scale)
+    }
+
+    private func triggerMapSnapshot(width: CGFloat, height: CGFloat, scale: CGFloat) {
+        let options = MKMapSnapshotter.Options()
+        let center = CLLocationCoordinate2D(
+            latitude: flightFeedClient.homeLatitude,
+            longitude: flightFeedClient.homeLongitude
+        )
+        let spanDelta = (Double(flightFeedClient.radiusNm) * 2.4) / 60.0
+        options.region = MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: spanDelta, longitudeDelta: spanDelta)
+        )
+        options.size = NSSize(width: width, height: height)
+
+        if #available(macOS 13.0, *) {
+            let configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+            configuration.pointOfInterestFilter = .excludingAll
+            configuration.showsTraffic = false
+            options.preferredConfiguration = configuration
+        } else {
+            options.mapType = .mutedStandard
+        }
+
+        let snapshotter = MKMapSnapshotter(options: options)
+        snapshotter.start { [weak self] snapshot, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    screensaverLogger.error("Map snapshot failed: \(error.localizedDescription)")
+                    return
+                }
+                if let image = snapshot?.image {
+                    screensaverLogger.info("Map snapshot succeeded")
+                    self?.viewModel.backgroundImage = image
+                }
+            }
+        }
     }
 
     public func render(state: ScreensaverState) {
@@ -80,37 +137,43 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
     }
 
     public override func draw(_ rect: NSRect) {
-        NSColor.black.setFill()
-        rect.fill()
+        // No-op: Drawing is handled entirely by layer-backed subviews
     }
 
+    public override func animateOneFrame() {
+        // No-op: Disable legacy animation tick redrawing, letting SwiftUI and MapKit manage frames
+    }
+
+    // Map delegation and renderer now handled natively by SwiftUI BackgroundMapView coordinator
+
     private func startRefreshLoopIfNeeded() {
-        guard refreshTimer == nil else { return }
+        guard refreshTimer == nil || (previewMode && rotationTimer == nil) else { return }
 
         if previewMode {
             screensaverLogger.info("showing preview data")
             showPreviewData()
-            return
+        } else {
+            screensaverLogger.info("requesting flights immediately")
+            requestFlights()
+            
+            let timer = Timer(timeInterval: 8, repeats: true) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.requestFlights()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            refreshTimer = timer
         }
 
-        screensaverLogger.info("requesting flights immediately")
-        requestFlights()
-        
-        let timer = Timer(timeInterval: 8, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.requestFlights()
+        if rotationTimer == nil {
+            let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.advanceCard()
+                }
             }
+            RunLoop.main.add(timer, forMode: .common)
+            rotationTimer = timer
         }
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
-
-        let rotationTimer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.advanceCard()
-            }
-        }
-        RunLoop.main.add(rotationTimer, forMode: .common)
-        self.rotationTimer = rotationTimer
     }
 
     private func requestFlights() {
@@ -292,6 +355,68 @@ public final class OverheadTrackerScreensaverView: ScreenSaverView {
 @MainActor
 final class ScreensaverViewModel: ObservableObject {
     @Published var state: ScreensaverState = .loading
+    @Published var backgroundImage: NSImage? = nil
+}
+
+@MainActor
+struct CardOverlayView: View {
+    @ObservedObject var viewModel: ScreensaverViewModel
+
+    var body: some View {
+        switch viewModel.state {
+        case .loading:
+            LoadingStatusView()
+        case .noFlights:
+            NoFlightsStatusView()
+        case .offline(let message):
+            OfflineStatusView(message: message)
+        case .live(let flights, let index):
+            if flights.indices.contains(index) {
+                FlightCardView(
+                    flight: flights[index],
+                    positionText: "\(index + 1) / \(flights.count)"
+                )
+            } else {
+                NoFlightsStatusView()
+            }
+        }
+    }
+}
+
+struct MapSnapshotView: View {
+    @ObservedObject var viewModel: ScreensaverViewModel
+
+    var body: some View {
+        GeometryReader { geometry in
+            let minDimension = min(geometry.size.width, geometry.size.height)
+            ZStack {
+                if let bgImage = viewModel.backgroundImage {
+                    Image(nsImage: bgImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color.black
+                }
+
+                // Draw circular geofence ring in the center of the screen
+                Circle()
+                    .stroke(Color.orange.opacity(0.35), lineWidth: 2)
+                    .frame(width: minDimension * 0.72, height: minDimension * 0.72)
+                
+                // Home marker pin in the center
+                ZStack {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 24, height: 24)
+                    Text("H")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+    }
 }
 
 @MainActor
@@ -299,43 +424,12 @@ struct OverheadTrackerScreensaverRootView: View {
     @ObservedObject var viewModel: ScreensaverViewModel
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            switch viewModel.state {
-            case .loading:
-                LoadingStatusView()
-            case .noFlights:
-                NoFlightsStatusView()
-            case .offline(let message):
-                OfflineStatusView(message: message)
-            case .live(let flights, let index):
-                if flights.indices.contains(index) {
-                    ZStack(alignment: .topLeading) {
-                        FlightCardView(
-                            flight: flights[index],
-                            positionText: "\(index + 1) / \(flights.count)"
-                        )
+        ZStack {
+            MapSnapshotView(viewModel: viewModel)
+                .ignoresSafeArea()
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("CARD \(index + 1) OF \(flights.count)")
-                                .font(.system(size: 28, weight: .black, design: .rounded))
-                            Text(flights[index].callsign)
-                                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.78))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(24)
-                    }
-                } else {
-                    NoFlightsStatusView()
-                }
-            }
+            CardOverlayView(viewModel: viewModel)
         }
+        .background(Color.clear)
     }
 }

@@ -14,6 +14,9 @@ public struct Flight: Equatable, Sendable {
     public let phase: FlightPhase
     public let squawk: String?
     public let hex: String?
+    public let category: String?
+    public let latitude: Double?
+    public let longitude: Double?
 
     public init(
         id: String,
@@ -28,7 +31,10 @@ public struct Flight: Equatable, Sendable {
         distanceKm: Double,
         phase: FlightPhase,
         squawk: String?,
-        hex: String? = nil
+        hex: String? = nil,
+        category: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil
     ) {
         self.id = id
         self.callsign = callsign
@@ -43,9 +49,26 @@ public struct Flight: Equatable, Sendable {
         self.phase = phase
         self.squawk = squawk
         self.hex = hex
+        self.category = category
+        self.latitude = latitude
+        self.longitude = longitude
     }
 
     public var isEmergency: Bool {
         squawk == "7700" || squawk == "7600" || squawk == "7500"
+    }
+
+    public var isGroundVehicle: Bool {
+        guard let cat = category?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() else {
+            return false
+        }
+        return cat.hasPrefix("C")
+    }
+
+    public var isNonAircraft: Bool {
+        guard let h = hex?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return h.hasPrefix("~")
     }
 }

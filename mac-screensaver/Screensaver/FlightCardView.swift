@@ -8,6 +8,16 @@ struct FlightCardView: View {
     let flight: Flight
     let positionText: String?
 
+    @State private var logoImage: NSImage?
+
+    private var prefix: String {
+        airlinePrefix(from: flight.callsign)
+    }
+
+    private var logoKey: String {
+        "logo:\(prefix)"
+    }
+
     private var accentColor: Color {
         if flight.isEmergency {
             return .red
@@ -37,8 +47,6 @@ struct FlightCardView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -47,9 +55,24 @@ struct FlightCardView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
 
-                        Text(flight.airline)
-                            .font(.system(size: 26, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.88))
+                        HStack(alignment: .center, spacing: 12) {
+                            if let logoImage {
+                                Image(nsImage: logoImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 32, height: 32)
+                                    .background(Color.white.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                                    )
+                            }
+
+                            Text(flight.airline)
+                                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.88))
+                        }
 
                         Text("\(flight.originCity) to \(flight.destinationCity)")
                             .font(.system(size: 28, weight: .medium, design: .rounded))
@@ -89,12 +112,17 @@ struct FlightCardView: View {
             .frame(maxWidth: 980, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color(red: 0.06, green: 0.07, blue: 0.09))
+                    .fill(.ultraThinMaterial)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 36, style: .continuous)
+                    .fill(Color(red: 0.06, green: 0.07, blue: 0.09).opacity(0.72))
                     .overlay(
                         RoundedRectangle(cornerRadius: 36, style: .continuous)
                             .strokeBorder(accentColor.opacity(0.72), lineWidth: 2)
                     )
-                    .shadow(color: accentColor.opacity(0.22), radius: 24, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.45), radius: 24, x: 0, y: 10)
+                    .shadow(color: accentColor.opacity(0.18), radius: 12, x: 0, y: 4)
             )
             .padding(48)
             .foregroundStyle(.white)
@@ -113,6 +141,17 @@ struct FlightCardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .padding(22)
                 }
+            }
+        }
+        .task(id: logoKey) {
+            logoImage = nil
+            guard !prefix.isEmpty else { return }
+
+            if let cachedLogo = FlightImageCache.shared.image(for: logoKey) {
+                logoImage = cachedLogo
+            } else if let loadedLogo = await FlightArtworkFetcher.loadAirlineLogo(prefix: prefix) {
+                logoImage = loadedLogo
+                FlightImageCache.shared.store(loadedLogo, for: logoKey)
             }
         }
     }
@@ -135,7 +174,6 @@ private struct FlightArtworkTileView: View {
     let flight: Flight
     let accentColor: Color
 
-    @State private var logoImage: NSImage?
     @State private var photoImage: NSImage?
 
     private var prefix: String {
@@ -146,14 +184,8 @@ private struct FlightArtworkTileView: View {
         airlineBrandColor(for: prefix) ?? accentColor
     }
 
-    private var photoCaption: String {
-        [flight.aircraftType, flight.registration]
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .joined(separator: " · ")
-    }
-
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
                 .overlay(
@@ -168,116 +200,26 @@ private struct FlightArtworkTileView: View {
                     .scaledToFill()
                     .frame(width: 240, height: 172)
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .clear,
-                                        .black.opacity(0.08),
-                                        .black.opacity(0.42)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("AIRCRAFT PHOTO")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(brandColor)
-                    Text(photoCaption.isEmpty ? "WAITING FOR IMAGE" : photoCaption)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.88))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                    Spacer(minLength: 0)
-                    Text(flight.hex?.uppercased() ?? "NO HEX")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.55))
+                VStack(spacing: 12) {
+                    Image(systemName: "airplane")
+                        .font(.system(size: 40))
+                        .foregroundStyle(brandColor.opacity(0.6))
+                    Text("NO PHOTO")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
-                .padding(14)
-                .frame(width: 240, height: 172, alignment: .leading)
-            }
-
-            VStack(alignment: .trailing, spacing: 6) {
-                if let logoImage {
-                    Image(nsImage: logoImage)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(8)
-                        .frame(width: 68, height: 68)
-                        .background(Color.black.opacity(0.28))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(brandColor.opacity(0.8), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    VStack(spacing: 4) {
-                        Text(prefix.isEmpty ? "AIR" : prefix)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Text(flight.airline)
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                    }
-                    .foregroundStyle(brandColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(minWidth: 68, minHeight: 68)
-                    .background(Color.black.opacity(0.28))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(brandColor.opacity(0.8), lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-            }
-            .padding(10)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.55)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 56)
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(flight.aircraftType)
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                        Text(flight.registration)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.76))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(12)
+                .frame(width: 240, height: 172, alignment: .center)
             }
         }
         .task(id: artworkKey) {
+            photoImage = nil
+
             guard !artworkKey.isEmpty else {
-                logoImage = nil
-                photoImage = nil
                 return
             }
 
-            if let cachedLogo = FlightImageCache.shared.image(for: logoKey) {
-                logoImage = cachedLogo
-            } else if let loadedLogo = await FlightArtworkFetcher.loadAirlineLogo(prefix: prefix) {
-                logoImage = loadedLogo
-                FlightImageCache.shared.store(loadedLogo, for: logoKey)
-            }
-
             guard let photoKey else {
-                photoImage = nil
                 return
             }
 
@@ -301,17 +243,16 @@ private struct FlightArtworkTileView: View {
         ].joined(separator: "|")
     }
 
-    private var logoKey: String {
-        "logo:\(prefix)"
-    }
-
     private var photoKey: String? {
+        let reg = flight.registration.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !reg.isEmpty && reg != "---" && reg != "Unknown" {
+            return "photo:reg:\(reg.uppercased())"
+        }
         guard let hex = flight.hex?.trimmingCharacters(in: .whitespacesAndNewlines),
               !hex.isEmpty else {
             return nil
         }
-
-        return "photo:\(hex.uppercased()):\(flight.registration.uppercased()):\(flight.aircraftType.uppercased())"
+        return "photo:hex:\(hex.uppercased())"
     }
 }
 
@@ -331,10 +272,18 @@ private final class FlightImageCache {
 
 private enum FlightArtworkFetcher {
     static func loadAirlineLogo(prefix: String) async -> NSImage? {
-        guard let url = airlineLogoURL(for: prefix) else { return nil }
+        let code = prefix.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard code.count >= 2 else { return nil }
+        guard let url = URL(string: "https://content.airhex.com/content/logos/airlines_\(code)_120_120_c.png?theme=dark") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("OverheadTrackerScreensaver/1.0 (+https://overheadtracker.com)", forHTTPHeaderField: "User-Agent")
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return nil
+            }
             return NSImage(data: data)
         } catch {
             return nil
@@ -342,52 +291,56 @@ private enum FlightArtworkFetcher {
     }
 
     static func loadAircraftPhoto(flight: Flight) async -> NSImage? {
-        guard let url = aircraftPhotoLookupURL(for: flight) else { return nil }
+        let reg = flight.registration.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !reg.isEmpty && reg != "---" && reg != "Unknown" {
+            if let image = await fetchPhoto(from: "https://api.planespotters.net/pub/photos/reg/\(reg)") {
+                return image
+            }
+        }
+
+        if let hex = flight.hex?.trimmingCharacters(in: .whitespacesAndNewlines), !hex.isEmpty {
+            if let image = await fetchPhoto(from: "https://api.planespotters.net/pub/photos/hex/\(hex)") {
+                return image
+            }
+        }
+
+        return nil
+    }
+
+    private static func fetchPhoto(from urlString: String) async -> NSImage? {
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("OverheadTrackerScreensaver/1.0 (+https://overheadtracker.com)", forHTTPHeaderField: "User-Agent")
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            let response = try JSONDecoder().decode(PlanespottersPhotoResponse.self, from: data)
-            guard let photoURL = response.bestPhotoURL else { return nil }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return nil
+            }
+            
+            let decoded = try JSONDecoder().decode(PlanespottersPhotoResponse.self, from: data)
+            guard let photoURL = decoded.bestPhotoURL else { return nil }
 
             let cacheKey = photoURL.absoluteString
             if let cached = await FlightImageCache.shared.image(for: cacheKey) {
                 return cached
             }
 
-            let (photoData, _) = try await URLSession.shared.data(from: photoURL)
+            var photoRequest = URLRequest(url: photoURL)
+            photoRequest.setValue("OverheadTrackerScreensaver/1.0 (+https://overheadtracker.com)", forHTTPHeaderField: "User-Agent")
+
+            let (photoData, photoResponse) = try await URLSession.shared.data(for: photoRequest)
+            if let httpPhotoResponse = photoResponse as? HTTPURLResponse, !(200...299).contains(httpPhotoResponse.statusCode) {
+                return nil
+            }
+            
             guard let image = NSImage(data: photoData) else { return nil }
             await FlightImageCache.shared.store(image, for: cacheKey)
             return image
         } catch {
             return nil
         }
-    }
-
-    private static func airlineLogoURL(for prefix: String) -> URL? {
-        let code = prefix.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard code.count >= 2 else { return nil }
-        return URL(string: "https://content.airhex.com/content/logos/airlines_\(code)_120_120_c.png?theme=dark")
-    }
-
-    private static func aircraftPhotoLookupURL(for flight: Flight) -> URL? {
-        guard let hex = flight.hex?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !hex.isEmpty else { return nil }
-
-        var components = URLComponents(string: "https://api.planespotters.net/pub/photos/hex/\(hex)")!
-        var queryItems: [URLQueryItem] = []
-
-        let reg = flight.registration.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !reg.isEmpty && reg != "---" {
-            queryItems.append(URLQueryItem(name: "reg", value: reg))
-        }
-
-        let type = flight.aircraftType.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !type.isEmpty && type != "---" {
-            queryItems.append(URLQueryItem(name: "icaoType", value: type))
-        }
-
-        components.queryItems = queryItems.isEmpty ? nil : queryItems
-        return components.url
     }
 }
 

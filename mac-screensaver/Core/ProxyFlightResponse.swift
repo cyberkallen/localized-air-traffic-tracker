@@ -6,12 +6,12 @@ public struct ProxyFlightResponse: Decodable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let payloads = try container.decodeIfPresent([FlightPayload].self, forKey: .flights) {
-            flights = payloads.map(\.flight)
+            flights = payloads.map(\.flight).filter { !$0.isGroundVehicle && !$0.isNonAircraft && $0.altitudeFt > 0 }
             return
         }
 
         let aircraft = try container.decodeIfPresent([AircraftPayload].self, forKey: .ac) ?? []
-        flights = aircraft.map(\.flight)
+        flights = aircraft.map(\.flight).filter { !$0.isGroundVehicle && !$0.isNonAircraft && $0.altitudeFt > 0 }
     }
 
     public init(flights: [Flight]) {
@@ -40,11 +40,17 @@ private struct FlightPayload: Decodable, Sendable {
         case distanceKm
         case phase
         case squawk
+        case category
+        case latitude = "lat"
+        case longitude = "lon"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let phase = try container.decodeIfPresent(String.self, forKey: .phase)
+        let category = try container.decodeIfPresent(String.self, forKey: .category)
+        let latitude = try? container.decodeIfPresent(Double.self, forKey: .latitude)
+        let longitude = try? container.decodeIfPresent(Double.self, forKey: .longitude)
 
         flight = Flight(
             id: try container.decode(String.self, forKey: .id),
@@ -58,7 +64,10 @@ private struct FlightPayload: Decodable, Sendable {
             speedKt: try container.decode(Int.self, forKey: .speedKt),
             distanceKm: try container.decode(Double.self, forKey: .distanceKm),
             phase: FlightPhase(rawValue: phase ?? "") ?? .unknown,
-            squawk: try container.decodeIfPresent(String.self, forKey: .squawk)
+            squawk: try container.decodeIfPresent(String.self, forKey: .squawk),
+            category: category,
+            latitude: latitude,
+            longitude: longitude
         )
     }
 }
@@ -80,6 +89,11 @@ private struct AircraftPayload: Decodable, Sendable {
         case dep
         case arr
         case squawk
+        case category
+        case baroRate = "baro_rate"
+        case geomRate = "geom_rate"
+        case latitude = "lat"
+        case longitude = "lon"
     }
 
     init(from decoder: Decoder) throws {
@@ -98,6 +112,16 @@ private struct AircraftPayload: Decodable, Sendable {
         let distanceKm = Self.decodeDouble(container, key: .distanceKm)
         let squawk = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .squawk))
         let hex = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .hex))
+        let category = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .category))
+        let latitude = try? container.decodeIfPresent(Double.self, forKey: .latitude)
+        let longitude = try? container.decodeIfPresent(Double.self, forKey: .longitude)
+
+        var vspd = Self.roundedInt(Self.decodeDouble(container, key: .baroRate))
+        if vspd == 0 {
+            vspd = Self.roundedInt(Self.decodeDouble(container, key: .geomRate))
+        }
+
+        let phase = Self.determinePhase(altitudeFt: altitudeFt, verticalSpeedFpm: vspd, distanceKm: distanceKm)
 
         flight = Flight(
             id: hex ?? callsign ?? "UNKNOWN",
@@ -110,10 +134,37 @@ private struct AircraftPayload: Decodable, Sendable {
             altitudeFt: altitudeFt,
             speedKt: speedKt,
             distanceKm: distanceKm,
-            phase: .unknown,
+            phase: phase,
             squawk: squawk,
-            hex: hex
+            hex: hex,
+            category: category,
+            latitude: latitude,
+            longitude: longitude
         )
+    }
+
+    private static func determinePhase(altitudeFt: Int, verticalSpeedFpm: Int, distanceKm: Double) -> FlightPhase {
+        if distanceKm < 2.0 && altitudeFt < 8000 {
+            return .overhead
+        }
+        if altitudeFt < 3000 {
+            if verticalSpeedFpm < -200 {
+                return .landing
+            }
+            if verticalSpeedFpm > 200 {
+                return .takeoff
+            }
+            if verticalSpeedFpm < -50 {
+                return .approach
+            }
+        }
+        if verticalSpeedFpm < -100 {
+            return .descending
+        }
+        if verticalSpeedFpm > 100 {
+            return .climbing
+        }
+        return .cruising
     }
 
     private static func trimmed(_ value: String?) -> String? {

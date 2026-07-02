@@ -4,7 +4,7 @@ import OverheadTrackerScreensaverCore
 public struct FlightFeedClient {
     public static let defaultHomeLatitude = -33.7749
     public static let defaultHomeLongitude = 151.28783
-    public static let defaultRadiusNm = 40
+    public static let defaultRadiusNm = 20
 
     let session: URLSession
     let baseURL: URL
