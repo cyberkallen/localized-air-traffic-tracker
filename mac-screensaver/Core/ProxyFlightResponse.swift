@@ -43,6 +43,7 @@ private struct FlightPayload: Decodable, Sendable {
         case category
         case latitude = "lat"
         case longitude = "lon"
+        case track
     }
 
     init(from decoder: Decoder) throws {
@@ -51,6 +52,7 @@ private struct FlightPayload: Decodable, Sendable {
         let category = try container.decodeIfPresent(String.self, forKey: .category)
         let latitude = try? container.decodeIfPresent(Double.self, forKey: .latitude)
         let longitude = try? container.decodeIfPresent(Double.self, forKey: .longitude)
+        let track = Self.decodeDoubleOptional(container, key: .track)
 
         flight = Flight(
             id: try container.decode(String.self, forKey: .id),
@@ -67,8 +69,19 @@ private struct FlightPayload: Decodable, Sendable {
             squawk: try container.decodeIfPresent(String.self, forKey: .squawk),
             category: category,
             latitude: latitude,
-            longitude: longitude
+            longitude: longitude,
+            track: track
         )
+    }
+
+    private static func decodeDoubleOptional(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double? {
+        if let val = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return val
+        }
+        if let val = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return Double(val)
+        }
+        return nil
     }
 }
 
@@ -94,6 +107,7 @@ private struct AircraftPayload: Decodable, Sendable {
         case geomRate = "geom_rate"
         case latitude = "lat"
         case longitude = "lon"
+        case track
     }
 
     init(from decoder: Decoder) throws {
@@ -115,6 +129,7 @@ private struct AircraftPayload: Decodable, Sendable {
         let category = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .category))
         let latitude = try? container.decodeIfPresent(Double.self, forKey: .latitude)
         let longitude = try? container.decodeIfPresent(Double.self, forKey: .longitude)
+        let track = Self.decodeDoubleOptional(container, key: .track)
 
         var vspd = Self.roundedInt(Self.decodeDouble(container, key: .baroRate))
         if vspd == 0 {
@@ -139,7 +154,8 @@ private struct AircraftPayload: Decodable, Sendable {
             hex: hex,
             category: category,
             latitude: latitude,
-            longitude: longitude
+            longitude: longitude,
+            track: track
         )
     }
 
@@ -179,6 +195,16 @@ private struct AircraftPayload: Decodable, Sendable {
 
     private static func decodeDouble(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double {
         (try? container.decodeIfPresent(Double.self, forKey: key)) ?? 0
+    }
+
+    private static func decodeDoubleOptional(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double? {
+        if let val = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return val
+        }
+        if let val = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return Double(val)
+        }
+        return nil
     }
 
     private static func roundedInt(_ value: Double?) -> Int {

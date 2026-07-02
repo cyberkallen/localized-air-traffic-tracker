@@ -17,6 +17,7 @@ public struct Flight: Equatable, Sendable {
     public let category: String?
     public let latitude: Double?
     public let longitude: Double?
+    public let track: Double?
 
     public init(
         id: String,
@@ -34,7 +35,8 @@ public struct Flight: Equatable, Sendable {
         hex: String? = nil,
         category: String? = nil,
         latitude: Double? = nil,
-        longitude: Double? = nil
+        longitude: Double? = nil,
+        track: Double? = nil
     ) {
         self.id = id
         self.callsign = callsign
@@ -52,6 +54,7 @@ public struct Flight: Equatable, Sendable {
         self.category = category
         self.latitude = latitude
         self.longitude = longitude
+        self.track = track
     }
 
     public var isEmergency: Bool {
@@ -70,5 +73,33 @@ public struct Flight: Equatable, Sendable {
             return false
         }
         return h.hasPrefix("~")
+    }
+}
+
+public extension Flight {
+    func isInsideGeofence(radiusKm: Double) -> Bool {
+        distanceKm <= radiusKm
+    }
+
+    var mapHeadingDegrees: Double {
+        guard let track else { return 0 }
+        return track
+    }
+
+    static func bearingDegrees(
+        fromLatitude startLatitude: Double,
+        longitude startLongitude: Double,
+        toLatitude endLatitude: Double,
+        longitude endLongitude: Double
+    ) -> Double {
+        let startLat = startLatitude * .pi / 180
+        let endLat = endLatitude * .pi / 180
+        let deltaLon = (endLongitude - startLongitude) * .pi / 180
+
+        let y = sin(deltaLon) * cos(endLat)
+        let x = cos(startLat) * sin(endLat) - sin(startLat) * cos(endLat) * cos(deltaLon)
+        let bearing = atan2(y, x) * 180 / .pi
+
+        return (bearing + 360).truncatingRemainder(dividingBy: 360)
     }
 }

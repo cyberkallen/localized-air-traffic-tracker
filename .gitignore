@@ -22,3 +22,14 @@ android/.gradle/
 android/app/build/
 android/build/
 *.iml
+UserInterfaceState.xcuserstate
+
+# macOS Screensaver local debug outputs
+mac-screensaver/debug_runner
+mac-screensaver/debug_runner.dSYM/
+mac-screensaver/DerivedData/
+mac-screensaver/.build/
+
+# Agent/Codex configs
+.agents/
+.codex/
