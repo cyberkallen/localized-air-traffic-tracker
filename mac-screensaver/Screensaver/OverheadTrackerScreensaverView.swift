@@ -569,7 +569,10 @@ struct MapSnapshotView: View {
                     ForEach(Array(viewModel.flightTrails.keys), id: \.self) { flightId in
                         if let trail = viewModel.flightTrails[flightId], trail.count > 1 {
                             Path { path in
-                                let points = trail.map { mapSnapshot.point(for: $0) }
+                                let points = trail.map { coord -> CGPoint in
+                                    let pt = mapSnapshot.point(for: coord)
+                                    return CGPoint(x: pt.x, y: geometry.size.height - pt.y)
+                                }
                                 if let first = points.first {
                                     path.move(to: first)
                                     for point in points.dropFirst() {
@@ -584,19 +587,20 @@ struct MapSnapshotView: View {
                         }
                     }
 
-                    // 2. Draw anchor line from the featured plane to the card position (in white/grey).
+                    // 2. Draw anchor line from the featured plane to the card position (in black/grey).
                     if case .live(let flights, _) = viewModel.state,
                        let activeFlight = flights.first(where: {
                            $0.id == activeId && $0.isInsideGeofence(radiusKm: viewModel.geofenceRadiusKm)
                        }),
                        let lat = activeFlight.latitude, let lon = activeFlight.longitude {
                         let pt = mapSnapshot.point(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+                        let projectedY = geometry.size.height - pt.y
                         let alignToRight = (activeFlight.longitude ?? 0.0) < viewModel.homeLongitude
                         let cardAnchorX = alignToRight ? (geometry.size.width - 80 - 240) : (80 + 240)
                         let cardAnchor = CGPoint(x: cardAnchorX, y: geometry.size.height / 2)
 
                         Path { path in
-                            path.move(to: pt)
+                            path.move(to: CGPoint(x: pt.x, y: projectedY))
                             path.addLine(to: cardAnchor)
                         }
                         .stroke(
@@ -610,6 +614,7 @@ struct MapSnapshotView: View {
                         ForEach(flights, id: \.id) { flight in
                             if let lat = flight.latitude, let lon = flight.longitude {
                                 let pt = mapSnapshot.point(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+                                let projectedY = geometry.size.height - pt.y
                                 let isActive = flight.id == activeId && flight.isInsideGeofence(radiusKm: viewModel.geofenceRadiusKm)
 
                                 ZStack {
@@ -636,7 +641,7 @@ struct MapSnapshotView: View {
                                         .cornerRadius(3)
                                         .offset(y: isActive ? -22 : -18)
                                 }
-                                .position(x: pt.x, y: pt.y)
+                                .position(x: pt.x, y: projectedY)
                             }
                         }
                     }
