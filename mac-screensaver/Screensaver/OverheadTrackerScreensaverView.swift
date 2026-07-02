@@ -479,10 +479,14 @@ final class ScreensaverViewModel: ObservableObject {
     }
 
     func mapHeadingDegrees(for flight: Flight) -> Double {
+        if let track = flight.track {
+            return track
+        }
+
         guard let trail = flightTrails[flight.id], trail.count >= 2,
               let previous = trail.dropLast().last,
               let current = trail.last else {
-            return flight.mapHeadingDegrees
+            return 0.0
         }
 
         return Flight.bearingDegrees(
@@ -596,8 +600,8 @@ struct MapSnapshotView: View {
                             path.addLine(to: cardAnchor)
                         }
                         .stroke(
-                            Color.white.opacity(0.45),
-                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                            Color.black.opacity(0.65),
+                            style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
                         )
                     }
 
