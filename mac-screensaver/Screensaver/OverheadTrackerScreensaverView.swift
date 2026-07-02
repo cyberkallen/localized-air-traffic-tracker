@@ -498,6 +498,7 @@ final class ScreensaverViewModel: ObservableObject {
             )
         }()
 
+        screensaverLogger.error("mapHeadingDegrees callsign=\(flight.callsign, privacy: .public) track=\(flight.track ?? -999.0, privacy: .public) heading=\(heading, privacy: .public)")
         return heading - 45
     }
 }
