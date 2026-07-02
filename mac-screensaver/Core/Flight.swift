@@ -83,7 +83,7 @@ public extension Flight {
 
     var mapHeadingDegrees: Double {
         guard let track else { return 0 }
-        return track
+        return track - 45
     }
 
     static func bearingDegrees(

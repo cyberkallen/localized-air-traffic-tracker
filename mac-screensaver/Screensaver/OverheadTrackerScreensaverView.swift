@@ -479,22 +479,26 @@ final class ScreensaverViewModel: ObservableObject {
     }
 
     func mapHeadingDegrees(for flight: Flight) -> Double {
-        if let track = flight.track {
-            return track
-        }
+        let heading: Double = {
+            if let track = flight.track {
+                return track
+            }
 
-        guard let trail = flightTrails[flight.id], trail.count >= 2,
-              let previous = trail.dropLast().last,
-              let current = trail.last else {
-            return 0.0
-        }
+            guard let trail = flightTrails[flight.id], trail.count >= 2,
+                  let previous = trail.dropLast().last,
+                  let current = trail.last else {
+                return 0.0
+            }
 
-        return Flight.bearingDegrees(
-            fromLatitude: previous.latitude,
-            longitude: previous.longitude,
-            toLatitude: current.latitude,
-            longitude: current.longitude
-        )
+            return Flight.bearingDegrees(
+                fromLatitude: previous.latitude,
+                longitude: previous.longitude,
+                toLatitude: current.latitude,
+                longitude: current.longitude
+            )
+        }()
+
+        return heading - 45
     }
 }
 
