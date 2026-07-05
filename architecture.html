@@ -235,14 +235,14 @@ const nodes = [
   { data: { id: 'planespotters', label: 'Planespotters', tech: 'HTTPS, no auth', desc: 'Aircraft photo API. /pub/photos/hex/{hex}. Returns photos by ICAO hex or registration. Used by web app only.' }, classes: 'external-api', position: { x: 400, y: 90 } },
   { data: { id: 'nominatim', label: 'Nominatim\nOpenStreetMap', tech: 'HTTPS, no auth', desc: 'Geocoding API. Converts location names to lat/lon coordinates. Used for the location search in the web app.' }, classes: 'external-api', position: { x: 400, y: 230 } },
   { data: { id: 'cartodb', label: 'CartoDB\nMap Tiles', tech: 'HTTPS, no auth', desc: 'Dark/light map tile server for Leaflet. basemaps.cartocdn.com. Used as the map background in the web app.' }, classes: 'external-api', position: { x: 610, y: 90 } },
-  { data: { id: 'adsbdb-web', label: 'adsbdb\n(web app)', tech: 'HTTPS, no auth', desc: 'Route lookup from web app. /v0/callsign/{cs} returns departure and arrival airports.' }, classes: 'external-api', position: { x: 610, y: 230 } },
+  { data: { id: 'route-endpoint', label: 'Route Endpoint\napi.overheadtracker.com/route', tech: 'HTTPS, no auth', desc: 'Web app route hydration endpoint. Returns dep/arr airports on demand and uses shared cache.' }, classes: 'external-api', position: { x: 610, y: 230 } },
 
   // ─── Build / Deploy (below their devices) ───
   { data: { id: 'arduino-cli', label: 'arduino-cli\nbuild.sh', tech: 'USB flash + OTA', desc: 'Compiles and flashes ESP32 firmware. Echo via build.sh (COM4), Foxtrot via arduino-cli direct (COM7). OTA supported.' }, classes: 'build', position: { x: 150, y: 635 } },
   { data: { id: 'pm2', label: 'PM2\nwatchdog.sh', tech: 'Process manager on Pi', desc: 'Manages display (id 0) and tunnel (id 1) processes on the Pi. Watchdog.sh monitors health via cron every 60s.' }, classes: 'build', position: { x: 370, y: 910 } },
 
   // ─── COLUMN 2 (x=560): PROXY HUB ───
-  { data: { id: 'proxy', label: 'Railway Proxy\napi.overheadtracker.com', tech: 'Node.js / Express, port 3000', desc: 'Central proxy server on Railway. Races 4 ADS-B APIs, caches flights (45s), routes (30min), weather (10min). Rate limited 100 req/min/IP.' }, classes: 'cloud proxy-hub', position: { x: 560, y: 600 } },
+  { data: { id: 'proxy', label: 'Railway Proxy\napi.overheadtracker.com', tech: 'Node.js / Express, port 3000', desc: 'Central proxy server on Railway. Races 4 ADS-B APIs, caches flights (45s), routes on demand (7d / 1d), weather (10min). Rate limited 100 req/min/IP.' }, classes: 'cloud proxy-hub', position: { x: 560, y: 600 } },
 
   // ─── COLUMN 3 (x=850): ADS-B Data Sources ───
   { data: { id: 'adsb-lol', label: 'adsb.lol', tech: 'HTTPS, no auth', desc: 'Primary ADS-B data source. /v2/point/{lat}/{lon}/{radius}. Rate limited (429 → 60s cooldown).' }, classes: 'adsb-api', position: { x: 850, y: 380 } },
@@ -253,14 +253,14 @@ const nodes = [
   // ─── COLUMN 4 (x=560): Proxy Internals (below proxy, 2-column grid) ───
   { data: { id: 'flight-cache', label: 'Flight Cache\n45s TTL', tech: 'In-memory LRU, max 500', desc: 'Geo-bucketed cache keyed by lat/lon (rounded to 2 decimals) + radius. Nearby clients share cache hits. Dedup via inFlight map.' }, classes: 'proxy-internal', position: { x: 1120, y: 380 } },
   { data: { id: 'flight-logger', label: 'Flight Logger\ndaily JSON', tech: 'Auto-save every 60s', desc: 'Logs unique flights per day to flights-{date}.json. Tracks min/max altitude, distance, speed, first/last seen.' }, classes: 'proxy-internal', position: { x: 1320, y: 380 } },
-  { data: { id: 'route-cache', label: 'Route Cache\n30min TTL', tech: 'Max 5000, persisted to disk', desc: 'Maps callsigns to dep/arr airports. Persisted to route-cache.json. Background fire-and-forget lookups via adsbdb.' }, classes: 'proxy-internal', position: { x: 1120, y: 530 } },
+  { data: { id: 'route-cache', label: 'Route Cache\n7d / 1d TTL', tech: 'Max 5000, persisted to disk', desc: 'Maps callsigns to dep/arr airports. Persisted to route-cache.json. Shared by on-demand /route/:callsign lookups.' }, classes: 'proxy-internal', position: { x: 1120, y: 530 } },
   { data: { id: 'route-discovery', label: 'Route Discovery\n20K routes', tech: 'known-routes.json', desc: 'Detects new "City > City" route pairs. Persistent storage. Backfill runs at 02:00 AEST for yesterday\'s flights.' }, classes: 'proxy-internal', position: { x: 1320, y: 530 } },
   { data: { id: 'weather-cache', label: 'Weather Cache\n10min TTL', tech: 'Geo-bucketed + tide data', desc: 'Caches Open-Meteo weather data + BOM tide predictions (from embedded tides-2026.json).' }, classes: 'proxy-internal', position: { x: 1120, y: 680 } },
   { data: { id: 'device-registry', label: 'Device Registry\nheartbeats', tech: '10min timeout', desc: 'Tracks device health via POST /device/heartbeat. Stores fw version, heap, RSSI, uptime, flights count. Online if < 600s old.' }, classes: 'proxy-internal', position: { x: 1320, y: 680 } },
   { data: { id: 'email-scheduler', label: 'Email Scheduler\n3 daily', tech: '08:00 / 21:00 / 23:55 AEST', desc: 'Status email (08:00), route discovery (21:00), daily flight report (23:55). All via Resend API. HTML amber aesthetic.' }, classes: 'proxy-internal', position: { x: 1220, y: 840 } },
 
   // ─── COLUMN 5 (x=1560): External Services (proxy-side) ───
-  { data: { id: 'adsbdb', label: 'adsbdb\n(proxy)', tech: 'HTTPS, no auth, 5s timeout', desc: 'Route lookup API. /v0/callsign/{cs} returns departure and arrival airports. Results cached 30min on proxy.' }, classes: 'external-api', position: { x: 1560, y: 460 } },
+  { data: { id: 'adsbdb', label: 'adsbdb\n(proxy)', tech: 'HTTPS, no auth, 5s timeout', desc: 'Route lookup API used by the proxy only. /v0/callsign/{cs} returns departure and arrival airports.' }, classes: 'external-api', position: { x: 1560, y: 460 } },
   { data: { id: 'open-meteo', label: 'Open-Meteo', tech: 'HTTPS, no auth, 8s timeout', desc: 'Weather forecast API. Returns temp, humidity, wind, UV, visibility, precipitation, sunrise/sunset.' }, classes: 'external-api', position: { x: 1560, y: 610 } },
   { data: { id: 'resend', label: 'Resend', tech: 'HTTPS, Bearer token', desc: 'Transactional email API. Sends all 3 daily emails (status, route discovery, flight report). From: status@overheadtracker.com.' }, classes: 'external-api', position: { x: 1560, y: 770 } },
 ];
@@ -283,7 +283,7 @@ const edges = [
   { data: { source: 'flight-logger', target: 'email-scheduler', label: '', id: 'e-fl-es' }, classes: 'internal' },
 
   // ── Proxy internals → external services ──
-  { data: { source: 'route-cache', target: 'adsbdb', label: '/callsign', id: 'e-rc-adsbdb' }, classes: 'primary' },
+  { data: { source: 'route-cache', target: 'adsbdb', label: '/route/:callsign', id: 'e-rc-adsbdb' }, classes: 'primary' },
   { data: { source: 'weather-cache', target: 'open-meteo', label: '/forecast', id: 'e-wc-meteo' }, classes: 'primary' },
   { data: { source: 'email-scheduler', target: 'resend', label: '3 daily emails', id: 'e-es-resend' }, classes: 'email' },
 
@@ -303,7 +303,7 @@ const edges = [
   { data: { source: 'web-app', target: 'planespotters', label: 'photos', id: 'e-web-ps' }, classes: 'primary' },
   { data: { source: 'web-app', target: 'nominatim', label: 'geocode', id: 'e-web-nom' }, classes: 'primary' },
   { data: { source: 'web-app', target: 'cartodb', label: 'tiles', id: 'e-web-carto' }, classes: 'primary' },
-  { data: { source: 'web-app', target: 'adsbdb-web', label: '/callsign', id: 'e-web-adsbdb' }, classes: 'primary' },
+  { data: { source: 'web-app', target: 'route-endpoint', label: '/route/:callsign', id: 'e-web-adsbdb' }, classes: 'primary' },
 
   // ── Hosting ──
   { data: { source: 'github-pages', target: 'web-app', label: 'serves', id: 'e-gh-web' }, classes: 'hosting' },

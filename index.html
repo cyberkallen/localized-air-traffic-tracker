@@ -2363,8 +2363,20 @@
       return AIRPORT_DB[code] || code; // fall back to raw code if unknown
     }
 
+    const apiBase = (new URLSearchParams(window.location.search).get('api') || 'https://api.overheadtracker.com').replace(/\/$/, '');
+    const ROUTE_PREFETCH_COUNT = 4;
+
+    function normalizeCallsign(value) {
+      return (value || '').trim().toUpperCase();
+    }
+
+    function routeEndpoint(callsign) {
+      return apiBase + '/route/' + encodeURIComponent(normalizeCallsign(callsign));
+    }
+
     // Route cache — keyed by callsign, avoids repeat lookups
     const routeCache = new Map();
+    const routeInFlight = new Map();
     const runwayCache = new Map(); // ICAO → runways array (session cache)
 
     function formatRoute(dep, arr) {
@@ -2387,31 +2399,43 @@
       }
     }
 
-    // Looks up route by callsign from adsbdb.com, falls back gracefully.
+    // Looks up route by callsign from the worker, falls back gracefully.
     // Results are cached so each callsign is only fetched once per session.
     async function lookupRoute(callsign) {
-      if (!callsign || callsign === '---') return null;
-      if (routeCache.has(callsign)) return routeCache.get(callsign);
+      const cs = normalizeCallsign(callsign);
+      if (!cs || cs === '---') return null;
+      if (routeCache.has(cs)) return routeCache.get(cs);
+      if (routeInFlight.has(cs)) return routeInFlight.get(cs);
 
-      try {
-        const res = await fetch(
-          'https://api.adsbdb.com/v0/callsign/' + callsign,
-          { signal: timeoutSignal(5000) }
-        );
-        if (!res.ok) { routeCache.set(callsign, null); return null; }
-        const data = await res.json();
-        const r = data?.response?.flightroute;
-        if (!r) { routeCache.set(callsign, null); return null; }
+      const promise = (async () => {
+        try {
+          const res = await fetch(routeEndpoint(cs), { signal: timeoutSignal(5000) });
+          if (!res.ok) { routeCache.set(cs, null); return null; }
+          const data = await res.json();
+          const route = data?.route || formatRoute(data?.dep || null, data?.arr || null);
+          routeCache.set(cs, route || null);
+          return route || null;
+        } catch(e) {
+          // Network / transient error — don't cache; allow retry on next render
+          return null;
+        }
+      })();
 
-        // adsbdb returns IATA codes in origin/destination
-        const dep = r.origin?.iata_code || r.origin?.icao_code || null;
-        const arr = r.destination?.iata_code || r.destination?.icao_code || null;
-        const route = formatRoute(dep, arr);
-        routeCache.set(callsign, route);
-        return route;
-      } catch(e) {
-        // Network / transient error — don't cache; allow retry on next render
-        return null;
+      routeInFlight.set(cs, promise);
+      promise.finally(() => routeInFlight.delete(cs)).catch(() => {});
+      return promise;
+    }
+
+    function scheduleRoutePrefetch() {
+      if (!flights.length) return;
+      const seen = new Set();
+      for (let i = 0; i < Math.min(ROUTE_PREFETCH_COUNT, flights.length); i++) {
+        const f = flights[(flightIndex + i) % flights.length];
+        const cs = normalizeCallsign(f.flight);
+        if (!cs || cs === '---' || seen.has(cs)) continue;
+        seen.add(cs);
+        if (routeCache.has(cs) || routeInFlight.has(cs)) continue;
+        lookupRoute(cs);
       }
     }
 
@@ -2656,7 +2680,7 @@
 
       document.getElementById('info').innerHTML = infoHtml;
 
-      // If no inline route, async lookup from adsbdb (updates display when ready)
+      // If no inline route, async lookup from the worker route endpoint (updates display when ready)
       if (!inlineRoute && call !== '---') {
         lookupRoute(call).then(route => {
           // Only update if this flight is still the one being displayed
@@ -2805,7 +2829,13 @@
 
 
     // ── Navigation ───────────────────────────────────────────────────
-    function go(n) { if (flights.length) { flightIndex = (n + flights.length) % flights.length; render(flights[flightIndex]); } }
+    function go(n) {
+      if (flights.length) {
+        flightIndex = (n + flights.length) % flights.length;
+        render(flights[flightIndex]);
+        scheduleRoutePrefetch();
+      }
+    }
     function next() { go(flightIndex + 1); }
     function prev() { go(flightIndex - 1); }
 
@@ -2939,6 +2969,7 @@
       const restored = prevHex ? ac.findIndex(f => f.hex === prevHex) : -1;
       flightIndex = restored >= 0 ? restored : 0;
       render(flights[flightIndex]);
+      scheduleRoutePrefetch();
       updateStats(flights);
       return true;
     }
@@ -2950,7 +2981,7 @@
 
     // ── Fetch flights ────────────────────────────────────────────────
     // Uses the proxy server which races multiple ADS-B APIs server-side.
-    const PROXY_URL   = 'https://api.overheadtracker.com/flights?lat={LAT}&lon={LON}&radius={R}';
+    const PROXY_URL   = apiBase + '/flights?lat={LAT}&lon={LON}&radius={R}';
     function buildUrl(template) {
       return template
         .replace(/{LAT}/g, locationLat)

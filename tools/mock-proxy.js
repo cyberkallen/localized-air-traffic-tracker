@@ -28,6 +28,11 @@ const mode = process.argv[2] || 'normal';
 const port = parseInt(process.argv[3]) || 3000;
 const scenarioIdx = process.argv.indexOf('--scenario');
 const scenario = scenarioIdx >= 0 ? process.argv[scenarioIdx + 1] : 'busy';
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 
 const MODES = ['normal', 'timeout', 'error503', 'error502', 'corrupt', 'partial', 'slow',
                'chaos', 'transition', 'flap'];
@@ -61,6 +66,26 @@ function makeSyntheticWeather() {
   return JSON.stringify(generate(0, 0, 'empty').weather);
 }
 
+function makeSyntheticRoute(url) {
+  const raw = url.split('/').pop() || '';
+  const callsign = decodeURIComponent(raw.split('?')[0]).toUpperCase();
+  const routes = {
+    QFA1:  { dep: 'YSSY', arr: 'YMML' },
+    QFA421:{ dep: 'YSSY', arr: 'YMML' },
+    VOZ1:  { dep: 'YMML', arr: 'YBBN' },
+    JST1:  { dep: 'YSSY', arr: 'YPAD' },
+    UAE1:  { dep: 'OMDB', arr: 'WMKK' },
+  };
+  const route = routes[callsign] || { dep: 'YSSY', arr: 'YMML' };
+  return JSON.stringify({
+    callsign,
+    dep: route.dep,
+    arr: route.arr,
+    route: `${route.dep} > ${route.arr}`,
+    unknown: false,
+  });
+}
+
 function makeFlightResponse(count) {
   const data = generate(-33.8688, 151.2093, scenario).flights;
   data.ac = data.ac.slice(0, count);
@@ -88,20 +113,35 @@ function logReq(req, note) {
   console.log(`  [${timestamp()}] ${req.method} ${req.url} -> ${note}`);
 }
 
+function writeJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  res.end(body);
+}
+
+function writeNotFound(res) {
+  res.writeHead(404, CORS_HEADERS);
+  res.end('Not Found');
+}
+
 const handlers = {
   normal(req, res) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, CORS_HEADERS);
+      res.end();
+      return;
+    }
     if (req.url.startsWith('/flights')) {
       logReq(req, `200 flights (${scenario})`);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeSyntheticFlights(req.url));
+      writeJson(res, 200, makeSyntheticFlights(req.url));
+    } else if (req.url.startsWith('/route/')) {
+      logReq(req, '200 route');
+      writeJson(res, 200, makeSyntheticRoute(req.url));
     } else if (req.url.startsWith('/weather')) {
       logReq(req, '200 weather');
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeSyntheticWeather());
+      writeJson(res, 200, makeSyntheticWeather());
     } else {
       logReq(req, '404');
-      res.writeHead(404);
-      res.end('Not Found');
+      writeNotFound(res);
     }
   },
 
@@ -112,25 +152,23 @@ const handlers = {
 
   error503(req, res) {
     logReq(req, '503');
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Proxy disabled' }));
+    writeJson(res, 503, JSON.stringify({ error: 'Proxy disabled' }));
   },
 
   error502(req, res) {
     logReq(req, '502');
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Upstream timeout' }));
+    writeJson(res, 502, JSON.stringify({ error: 'Upstream timeout' }));
   },
 
   corrupt(req, res) {
     logReq(req, '200 corrupt JSON');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
     res.end('{"ac":[{"flight":"QFA1","lat":-33.87,"lon":151.21,"alt_baro":BROKEN');
   },
 
   partial(req, res) {
     logReq(req, '200 partial (will drop)');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
     const half = SAMPLE_FLIGHTS.slice(0, Math.floor(SAMPLE_FLIGHTS.length / 2));
     res.write(half);
     setTimeout(() => res.destroy(), 500);
@@ -140,16 +178,16 @@ const handlers = {
     logReq(req, 'SLOW (4s delay)');
     setTimeout(() => {
       if (req.url.startsWith('/flights')) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(makeSyntheticFlights(req.url));
+        writeJson(res, 200, makeSyntheticFlights(req.url));
+        console.log(`  [${timestamp()}]   -> sent response`);
+      } else if (req.url.startsWith('/route/')) {
+        writeJson(res, 200, makeSyntheticRoute(req.url));
         console.log(`  [${timestamp()}]   -> sent response`);
       } else if (req.url.startsWith('/weather')) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(makeSyntheticWeather());
+        writeJson(res, 200, makeSyntheticWeather());
         console.log(`  [${timestamp()}]   -> sent response`);
       } else {
-        res.writeHead(404);
-        res.end();
+        writeNotFound(res);
       }
     }, 4000);
   },
@@ -157,26 +195,26 @@ const handlers = {
   chaos(req, res) {
     seq++;
     if (!req.url.startsWith('/flights')) {
+      if (req.url.startsWith('/route/')) {
+        writeJson(res, 200, makeSyntheticRoute(req.url));
+        return;
+      }
       // Weather always responds normally in chaos mode
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeSyntheticWeather());
+      writeJson(res, 200, makeSyntheticWeather());
       return;
     }
     const r = Math.random();
     let what;
     if (r < 0.40) {
       what = '0 flights';
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(ZERO_FLIGHTS);
+      writeJson(res, 200, ZERO_FLIGHTS);
     } else if (r < 0.55) {
       what = '1 flight';
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeFlightResponse(1));
+      writeJson(res, 200, makeFlightResponse(1));
     } else if (r < 0.70) {
       const n = 2 + Math.floor(Math.random() * 4);
       what = `${n} flights`;
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeFlightResponse(n));
+      writeJson(res, 200, makeFlightResponse(n));
     } else if (r < 0.85) {
       what = 'slow (2s)';
       setTimeout(() => {
@@ -185,11 +223,11 @@ const handlers = {
       }, 2000);
     } else if (r < 0.95) {
       what = 'error 503';
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Chaos error' }));
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Chaos error' }));
     } else {
       what = 'corrupt JSON';
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
       res.end('{"ac":[{"flight":"BROKEN","lat":INVALID');
     }
     console.log(`  [${timestamp()}] [SEQ:${seq}] chaos -> ${what}`);
@@ -198,8 +236,11 @@ const handlers = {
   transition(req, res) {
     seq++;
     if (!req.url.startsWith('/flights')) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeSyntheticWeather());
+      if (req.url.startsWith('/route/')) {
+        writeJson(res, 200, makeSyntheticRoute(req.url));
+        return;
+      }
+      writeJson(res, 200, makeSyntheticWeather());
       return;
     }
     // Cycle: 0,0 | 1 | 0,0,0 | 5,5 — repeating every 8 requests
@@ -207,22 +248,23 @@ const handlers = {
     const n = cycle[seq % cycle.length];
     const data = n === 0 ? ZERO_FLIGHTS : makeFlightResponse(n);
     console.log(`  [${timestamp()}] [SEQ:${seq}] transition -> ${n} flights (step ${seq % cycle.length}/${cycle.length})`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(data);
+    writeJson(res, 200, data);
   },
 
   flap(req, res) {
     seq++;
     if (!req.url.startsWith('/flights')) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(makeSyntheticWeather());
+      if (req.url.startsWith('/route/')) {
+        writeJson(res, 200, makeSyntheticRoute(req.url));
+        return;
+      }
+      writeJson(res, 200, makeSyntheticWeather());
       return;
     }
     const n = seq % 2 === 0 ? 0 : 1;
     const data = n === 0 ? ZERO_FLIGHTS : makeFlightResponse(1);
     console.log(`  [${timestamp()}] [SEQ:${seq}] flap -> ${n} flights`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(data);
+    writeJson(res, 200, data);
   }
 };
 

@@ -15,11 +15,18 @@ Verify: `https://api.overheadtracker.com/status`
 ## Tests
 
 ```bash
-cd server && npm test          # 78 unit tests
+cd server && npm test          # 81 unit tests
 node server/load-test.js [url] [clients] [duration]
 ```
 
 ## Key Memory Files
 
 - `feedback_railway_deploy.md` — Railway root directory gotcha (must run from project root)
-- `architecture.md` — all 9 endpoints, caching strategy, route enrichment pipeline, flight logging, email reports
+- `architecture.md` — all 9 endpoints, caching strategy, route hydration pipeline, flight logging, email reports
+
+## Route Notes
+
+- Route lookups are served on-demand from `/route/:callsign`.
+- Positive route hits are cached for 7 days.
+- Negative route hits are cached for 1 day.
+- The main `/flights` response must stay route-free.

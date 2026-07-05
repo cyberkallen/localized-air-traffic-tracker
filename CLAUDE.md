@@ -58,12 +58,12 @@ Use feature branches and pull requests for non-trivial changes.
 | Service | Purpose | Auth |
 |---------|---------|------|
 | adsb.lol / adsb.fi / airplanes.live | Live ADS-B flight data (raced, first wins) | None (via proxy) |
-| OpenSky / adsbdb | Route lookups (dep/arr airports) | None (via proxy) |
+| Proxy route endpoint (`/route/:callsign`) | Route lookups (dep/arr airports) | None (via proxy) |
 | Nominatim / OpenStreetMap | Location geocoding | None |
 | Planespotters.net | Aircraft photos by registration | None |
 | CartoDB | Dark map tiles (Leaflet) | None |
 
-The proxy at `api.overheadtracker.com` (hosted on Railway) races all three ADS-B APIs in parallel and uses the fastest response. Results are cached for 5 s. Route lookups are non-blocking (fire-and-forget, cached for next request). New routes are tracked in `known-routes.json` (persistent) and surfaced via `/routes/new`, daily reports, and a nightly discovery email at 21:00 AEST.
+The proxy at `api.overheadtracker.com` (hosted on Railway) races all three ADS-B APIs in parallel and uses the fastest response. Results are cached for 5 s. Route lookups are on-demand via `/route/:callsign`, cached for 7 days on hits and 1 day on misses, and prefetched by the web app for nearby flights. New routes are tracked in `known-routes.json` (persistent) and surfaced via `/routes/new`, daily reports, and a nightly discovery email at 21:00 AEST.
 
 ---
 

@@ -2,6 +2,8 @@ const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 
+process.env.NODE_ENV = 'test';
+
 const {
   app, cache, inFlight, routeCache, stats, requestLog,
   haversine, airlineName, airlinePrefix, airportName,
@@ -375,6 +377,41 @@ describe('HTTP endpoints', () => {
       const res = await get('/flights?lat=1&lon=1&radius=15');
       // Either we get the stale data (200) or a 502 if no stale cache
       assert.ok(res.status === 200 || res.status === 502);
+    });
+
+    it('does not populate the route cache', async () => {
+      routeCache.clear();
+      cache.set('0,0,15', {
+        data: { ac: [{ flight: 'QFA1', lat: 0, lon: 0 }] },
+        timestamp: Date.now(),
+      });
+
+      const res = await get('/flights?lat=0&lon=0&radius=15');
+      assert.equal(res.status, 200);
+      assert.equal(routeCache.size, 0);
+    });
+  });
+
+  describe('GET /route/:callsign', () => {
+    beforeEach(() => { routeCache.clear(); });
+
+    it('returns a cached route hit without calling upstream', async () => {
+      routeCacheSet('QFA1', { dep: 'YSSY', arr: 'YMML', timestamp: Date.now() });
+
+      const res = await get('/route/QFA1');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.callsign, 'QFA1');
+      assert.equal(res.body.dep, 'YSSY');
+      assert.equal(res.body.arr, 'YMML');
+      assert.equal(res.body.route, 'Sydney > Melbourne');
+    });
+
+    it('returns and caches an unknown route as a soft miss', async () => {
+      const res = await get('/route/ZZZ999');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.callsign, 'ZZZ999');
+      assert.equal(res.body.route, null);
+      assert.equal(res.body.unknown, true);
     });
   });
 

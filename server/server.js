@@ -17,7 +17,8 @@ const rateLimit  = require('express-rate-limit');
 const app      = express();
 const PORT     = parseInt(process.env.PORT, 10) || 3000;
 const CACHE_MS         = 5000;
-const ROUTE_CACHE_MS   = 30 * 60 * 1000;
+const ROUTE_CACHE_MS   = 7 * 24 * 60 * 60 * 1000;
+const ROUTE_CACHE_MISS_MS = 24 * 60 * 60 * 1000;
 const ROUTE_CACHE_FILE = process.env.ROUTE_CACHE_FILE || __dirname + '/route-cache.json';
 const KNOWN_ROUTES_FILE = process.env.KNOWN_ROUTES_FILE || __dirname + '/known-routes.json';
 const MAX_CACHE_ENTRIES    = 500;   // evict oldest when exceeded
@@ -32,7 +33,8 @@ const MAX_ROUTE_CONCURRENT    = 5;  // max simultaneous route lookups
 
 const cache        = new Map();
 const inFlight     = new Map();  // key → Promise (dedup concurrent upstream fetches)
-const routeCache   = new Map();  // callsign -> { dep, arr, timestamp }
+const routeCache   = new Map();  // callsign -> { dep, arr, timestamp, unknown }
+const routeInFlight = new Map();  // callsign -> Promise (dedup route lookups)
 const apiCooldowns = new Map();  // apiName → cooldownExpiresAt (timestamp)
 const knownRoutes  = new Map();  // "DEP>ARR" → firstSeen date string
 const airportCache = new Map();  // ICAO → { runways, timestamp }
@@ -90,8 +92,21 @@ function lruSet(map, maxSize, key, entry) {
   }
 }
 function cacheSet(key, entry) { lruSet(cache, MAX_CACHE_ENTRIES, key, entry); }
-function routeCacheSet(key, entry) { lruSet(routeCache, MAX_ROUTE_ENTRIES, key, entry); }
+function routeCacheSet(key, entry) { lruSet(routeCache, MAX_ROUTE_ENTRIES, normalizeCallsign(key), entry); }
 function airportCacheSet(icao, entry) { lruSet(airportCache, MAX_AIRPORT_ENTRIES, icao, entry); }
+
+function normalizeCallsign(callsign) {
+  return (callsign || '').trim().toUpperCase();
+}
+
+function routeCacheExpiryMs(entry) {
+  return entry?.unknown ? ROUTE_CACHE_MISS_MS : ROUTE_CACHE_MS;
+}
+
+function routeCacheFresh(entry) {
+  if (!entry || !entry.timestamp) return false;
+  return (Date.now() - entry.timestamp) < routeCacheExpiryMs(entry);
+}
 
 // ── .env loader ──────────────────────────────────────────────────────
 try {
@@ -699,30 +714,12 @@ function formatRouteString(dep, arr) {
 
 
 function enrichRoutes(data) {
-  const unrouted = [];
   for (const ac of (data.ac || [])) {
-    const cs = (ac.flight || '').trim();
-    if (cs && !ac.dep && !ac.arr) {
-      const hit = routeCache.get(cs);
-      if (hit) {
-        if (hit.dep) ac.dep = hit.dep;
-        if (hit.arr) ac.arr = hit.arr;
-        const now = Date.now();
-        if ((now - hit.timestamp) >= ROUTE_CACHE_MS && !unrouted.includes(cs)) {
-          unrouted.push(cs);  // refresh stale entry in background
-        } else {
-          hit.timestamp = now; // LRU: keep active callsigns from being evicted
-        }
-      } else if (!unrouted.includes(cs)) {
-        unrouted.push(cs);
-      }
-    }
     const dep = ac.dep || ac.orig_iata || null;
     const arr = ac.arr || ac.dest_iata || null;
     const routeStr = formatRouteString(dep, arr);
     if (routeStr) ac.route = routeStr;
   }
-  return unrouted;
 }
 
 try {
@@ -813,7 +810,7 @@ let errorBucketIdx = 0;
 setInterval(() => {
   errorBucketIdx = (errorBucketIdx + 1) % 60;
   errorBuckets[errorBucketIdx] = 0;
-}, 60_000);
+}, 60_000).unref();
 
 // ── Request log (last 100 entries) ──────────────────────────────────
 const requestLog = [];
@@ -824,6 +821,7 @@ function addLog(entry) {
 
 let routeCacheDirty = false;
 function saveRouteCache() {
+  if (process.env.NODE_ENV === 'test') return;
   if (!routeCacheDirty) return;
   routeCacheDirty = false;
   const obj = {};
@@ -841,64 +839,93 @@ function saveAirportCache() {
 }
 
 async function lookupRoute(callsign) {
-  const cs  = callsign.trim();
-  const hit = routeCache.get(cs);
-  if (hit && (Date.now() - hit.timestamp) < ROUTE_CACHE_MS) {
-    hit.timestamp = Date.now();
-    return hit;
+  const cs = normalizeCallsign(callsign);
+  if (!cs) return null;
+
+  const cached = routeCache.get(cs);
+  if (routeCacheFresh(cached)) return cached;
+  if (process.env.NODE_ENV === 'test') {
+    const entry = { dep: null, arr: null, timestamp: Date.now(), unknown: true };
+    routeCacheSet(cs, entry);
+    routeCacheDirty = true;
+    return entry;
   }
+  if (routeInFlight.has(cs)) return routeInFlight.get(cs);
 
-  try { await routeSem.acquire(10000); } catch { return hit || null; }
-  try {
-    // Re-check after acquiring semaphore (another request may have filled it)
-    const hit2 = routeCache.get(cs);
-    if (hit2 && (Date.now() - hit2.timestamp) < ROUTE_CACHE_MS) return hit2;
-
-    // adsbdb.com route lookup (preferred — has city names)
+  const promise = (async () => {
     try {
-      const url = `https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`;
-      const r   = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (r.ok) {
-        const d = await r.json();
-        const fr = d?.response?.flightroute;
-        if (fr) {
-          const dep = fr.origin?.icao_code || fr.origin?.iata_code || null;
-          const arr = fr.destination?.icao_code || fr.destination?.iata_code || null;
-          if (dep || arr) {
-            const entry = { dep, arr, timestamp: Date.now() };
-            routeCacheSet(cs, entry);
-            routeCacheDirty = true;
-            return entry;
+      await routeSem.acquire(SEMAPHORE_TIMEOUT_MS);
+    } catch {
+      return cached || null;
+    }
+
+    try {
+      const fresh = routeCache.get(cs);
+      if (routeCacheFresh(fresh)) return fresh;
+
+      let entry = null;
+
+      try {
+        const url = `https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`;
+        const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+          const d = await r.json();
+          const fr = d?.response?.flightroute;
+          if (fr) {
+            const dep = fr.origin?.icao_code || fr.origin?.iata_code || null;
+            const arr = fr.destination?.icao_code || fr.destination?.iata_code || null;
+            if (dep || arr) {
+              entry = { dep, arr, timestamp: Date.now(), unknown: false };
+            }
           }
         }
-      }
-    } catch { /* timeout or network error */ }
+      } catch { /* timeout or network error */ }
 
-    // hexdb.io fallback (wider coverage, ICAO codes only)
-    try {
-      const url = `https://hexdb.io/api/v1/route/icao/${encodeURIComponent(cs)}`;
-      const r   = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (r.ok) {
-        const d = await r.json();
-        if (d.route) {
-          const parts = d.route.split('-');
-          const dep = parts[0] || null;
-          const arr = parts[parts.length - 1] || null;
-          if (dep || arr) {
-            const entry = { dep, arr, timestamp: Date.now() };
-            routeCacheSet(cs, entry);
-            routeCacheDirty = true;
-            return entry;
+      if (!entry) {
+        try {
+          const url = `https://hexdb.io/api/v1/route/icao/${encodeURIComponent(cs)}`;
+          const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          if (r.ok) {
+            const d = await r.json();
+            if (d.route) {
+              const parts = d.route.split('-');
+              const dep = parts[0] || null;
+              const arr = parts[parts.length - 1] || null;
+              if (dep || arr) {
+                entry = { dep, arr, timestamp: Date.now(), unknown: false };
+              }
+            }
           }
-        }
+        } catch { /* timeout or network error */ }
       }
-    } catch { /* timeout or network error */ }
-  } finally {
-    routeSem.release();
-  }
 
-  if (hit) return hit;  // stale disk entry as fallback
-  return null;
+      if (!entry) {
+        entry = { dep: null, arr: null, timestamp: Date.now(), unknown: true };
+      }
+
+      routeCacheSet(cs, entry);
+      routeCacheDirty = true;
+      return entry;
+    } finally {
+      routeSem.release();
+    }
+  })();
+
+  routeInFlight.set(cs, promise);
+  promise.finally(() => routeInFlight.delete(cs)).catch(() => {});
+  return promise;
+}
+
+function routePayload(callsign, entry) {
+  const dep = entry?.dep || null;
+  const arr = entry?.arr || null;
+  return {
+    callsign,
+    dep,
+    arr,
+    route: formatRouteString(dep, arr),
+    unknown: !!entry?.unknown || (!dep && !arr),
+  };
 }
 
 function cpuTemp() {
@@ -1267,7 +1294,6 @@ app.get('/flights', async (req, res) => {
   if (hit && (now - hit.timestamp) < CACHE_MS) {
     stats.cacheHits++;
     addLog({ type: 'HIT', client, key });
-    enrichRoutes(hit.data);
     return res.json(hit.data);
   }
 
@@ -1318,20 +1344,6 @@ app.get('/flights', async (req, res) => {
         }
         if (!data) throw new Error('All ADS-B APIs failed');
 
-        // Attach cached routes, await lookups for misses (with timeout)
-        const unrouted = enrichRoutes(data);
-
-        if (unrouted.length > 0) {
-          try {
-            await Promise.race([
-              Promise.allSettled(unrouted.map(cs => lookupRoute(cs))),
-              new Promise(resolve => setTimeout(resolve, 3000))
-            ]);
-            saveRouteCache();
-            enrichRoutes(data);  // re-enrich now that cache is populated
-          } catch { /* timeout — routes will be cached for next request */ }
-        }
-
         const fetchedAt = Date.now();
         data._fetchedAt = fetchedAt;
         cacheSet(key, { data, timestamp: fetchedAt });
@@ -1365,6 +1377,26 @@ app.get('/flights', async (req, res) => {
     }
     res.status(502).json({ error: 'Flight data temporarily unavailable' });
   }
+});
+
+// ── Route lookup endpoint (used by the web app) ─────────────────────
+app.get('/route/:callsign', async (req, res) => {
+  const cs = normalizeCallsign(req.params.callsign);
+  if (!cs || !/^[A-Z0-9]{2,8}$/.test(cs)) {
+    return res.status(400).json({ error: 'invalid callsign' });
+  }
+
+  const cached = routeCache.get(cs);
+  if (routeCacheFresh(cached)) {
+    return res.json(routePayload(cs, cached));
+  }
+
+  const entry = await lookupRoute(cs);
+  if (!entry) {
+    return res.json(routePayload(cs, { dep: null, arr: null, timestamp: Date.now(), unknown: true }));
+  }
+
+  return res.json(routePayload(cs, entry));
 });
 
 // ── Stats endpoint (used by display.py) ──────────────────────────────
@@ -1455,7 +1487,7 @@ app.delete('/track', (req, res) => {
 
 app.get('/track', async (req, res) => {
   if (!trackSession) return res.json({ callsign: null });
-  const cs = trackSession.callsign;
+  const cs = normalizeCallsign(trackSession.callsign);
 
   let ac = null;
   for (const url of [
@@ -1476,11 +1508,11 @@ app.get('/track', async (req, res) => {
 
   if (!ac.dep && !ac.arr) {
     const cached = routeCache.get(cs);
-    if (cached) { ac.dep = cached.dep; ac.arr = cached.arr; }
+    if (routeCacheFresh(cached)) { ac.dep = cached.dep; ac.arr = cached.arr; }
     else {
       try {
         const rt = await lookupRoute(cs);
-        if (rt) { ac.dep = rt.dep; ac.arr = rt.arr; }
+        if (rt && !rt.unknown) { ac.dep = rt.dep; ac.arr = rt.arr; }
       } catch { /* non-fatal */ }
     }
   }
